@@ -340,6 +340,10 @@ All tunable constants are stored in `config.json` at the project root and loaded
   ],
   "audio": {
     "lsKey": "flappyKiro_highScore"
+  },
+  "performance": {
+    "particlePoolSize": 128,
+    "targetFps": 60
   }
 }
 ```
@@ -583,6 +587,44 @@ If `canvas.getContext('2d')` returns `null`, the game replaces the canvas elemen
 ### AudioContext Autoplay Policy
 
 On browsers that block autoplay, `AudioContext.state` will be `"suspended"`. The `AudioManager` calls `audioContext.resume()` inside the first user-interaction handler (space/tap) before playing any sound.
+
+---
+
+## Performance and Optimization
+
+### 60 FPS Target
+
+The game loop is driven by `requestAnimationFrame`, which naturally synchronizes to the display refresh rate (typically 60 Hz). `deltaTime` is clamped to a maximum of `0.05 s` to prevent the spiral-of-death on slow frames — if a frame takes longer than 50 ms, physics and scrolling advance by at most 50 ms worth of movement rather than the full spike. All per-frame work (physics integration, collision tests, rendering) must complete within the ~16.6 ms frame budget. Heavy one-time operations (asset loading, `config.json` fetch, offscreen canvas pre-render) are performed once at startup and never repeated inside the game loop.
+
+### Sprite Batching
+
+The `Renderer` groups draw calls by type to minimize Canvas 2D state changes (`fillStyle`, `globalAlpha`, `font`, etc.). The fixed draw order is:
+
+1. Background fill
+2. Back-layer clouds (all in one pass)
+3. Front-layer clouds (all in one pass)
+4. All pipes (one pass)
+5. All particles (one pass)
+6. Ghosty
+7. UI (score display)
+
+`ctx.save`/`ctx.restore` is used only where strictly necessary: once to wrap the screen-shake translation (steps 1–7), and once for the score-pop scale transform. Saves are never nested unnecessarily.
+
+The scanline overlay is pre-rendered once onto an offscreen canvas at startup. Each frame it is composited with a single `drawImage` call rather than drawing individual horizontal lines, keeping the overlay cost to one draw call regardless of canvas height.
+
+### Object Pooling — Pipes
+
+`PipeManager` maintains a fixed-size pool of pre-allocated `Pipe` objects. The pool size is `ceil(CANVAS_WIDTH / PIPE_SPACING) + 2`, which is enough to cover the full screen width plus one pipe off each edge. When a pipe scrolls off-screen it is not garbage-collected — it is reset and returned to the pool. When a new pipe is needed it is taken from the pool and re-initialized with fresh gap values. This eliminates repeated object allocation and GC pressure during gameplay.
+
+### Object Pooling — Particles
+
+`ParticleSystem` maintains a fixed-size circular buffer of `Particle` objects (`particlePoolSize` slots, default 128). New particles overwrite the oldest slot when the buffer is full, avoiding dynamic array growth. Particle objects are never deleted; their `life` field is set to `0` to mark them as inactive, causing the update and draw loops to skip them cheaply.
+
+### Memory Management Rules
+
+- No `new` allocations inside the game loop — no new arrays, objects, or closures per frame.
+- Temporary vectors and rectangles used in collision math reuse pre-allocated scratch objects rather than creating new ones each frame.
+- Event listeners (`keydown`, `touchstart`) are registered once at startup and never re-registered.
 
 ---
 
