@@ -1,0 +1,44 @@
+{
+  "canvas": {
+    "width": 480,
+    "height": 640
+  },
+  "physics": {
+    "gravity": 800,
+    "ascentVelocity": 300,
+    "terminalVelocity": 600,
+    "ghostyX": 120,
+    "ghostySize": 48,
+    "hitboxRadius": 12,
+    "maxDeltaTime": 0.05
+  },
+  "pipes": {
+    "width": 64,
+    "spacing": 280,
+    "gapSize": 160,
+    "gapMargin": 60,
+    "initialSpeed": 120,
+    "speedIncrement": 10,
+    "speedMilestone": 5
+  },
+  "timing": {
+    "invincibilitySecs": 2.0,
+    "collisionAnimSecs": 0.6,
+    "screenShakeSecs": 0.4,
+    "screenShakeMag": 8,
+    "particleLifetime": 0.4,
+    "scorePopSecs": 0.3,
+    "maxDeltaTime": 0.05
+  },
+  "clouds": [
+    { "speed": 30, "count": 4 },
+    { "speed": 60, "count": 3 }
+  ],
+  "audio": {
+    "lsKey": "flappyKiro_highScore"
+  },
+  "performance": {
+    "particlePoolSize": 128,
+    "targetFps": 60
+  }
+}
