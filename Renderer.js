@@ -192,14 +192,11 @@ export default class Renderer {
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(tilt);
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = true;
 
     if (!this._spriteFailed && this._sprite.complete && this._sprite.naturalWidth > 0) {
-      // Sprite sheet: 6 frames × 32px
-      const FRAME_W = 32;
-      const FRAME_H = 32;
-      const frameIndex = this.anim ? this.anim.frame : 0;
-      ctx.drawImage(this._sprite, frameIndex * FRAME_W, 0, FRAME_W, FRAME_H, -half, -half, size, size);
+      // Single image — draw whole sprite scaled to ghostySize
+      ctx.drawImage(this._sprite, -half, -half, size, size);
     } else {
       ctx.fillStyle = COLOR.TEXT;
       ctx.fillRect(-half, -half, size, size);

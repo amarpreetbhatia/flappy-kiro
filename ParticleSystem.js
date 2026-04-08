@@ -13,7 +13,7 @@ export class Particle {
 
 export default class ParticleSystem {
   constructor(config) {
-    this._buf = Array.from({ length: config.performance.particlePoolSize }, () => new Particle());
+    this._buf = Array.from({ length: config.particlePoolSize }, () => new Particle());
     this._head = 0;
   }
 
