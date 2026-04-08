@@ -1,12 +1,18 @@
-// game.js — entry point: loads config, detects canvas support, wires subsystems
+// game.js — entry point: loads config, wires all subsystems, owns the RAF loop
 
 import StateMachine from './StateMachine.js';
+import PhysicsSystem from './PhysicsSystem.js';
+import PipeManager from './PipeManager.js';
+import CloudManager from './CloudManager.js';
+import ParticleSystem from './ParticleSystem.js';
+import CollisionSystem from './CollisionSystem.js';
+import ScoreManager from './ScoreManager.js';
+import AudioManager from './AudioManager.js';
+import Renderer, { ScorePop, ScreenShake, CollisionAnimation, AnimationState } from './Renderer.js';
+import InputHandler from './InputHandler.js';
 
 const DEFAULT_CONFIG = {
-  canvas: {
-    width: 480,
-    height: 640,
-  },
+  canvas: { width: 480, height: 640 },
   physics: {
     gravity: 800,
     ascentVelocity: 300,
@@ -14,12 +20,11 @@ const DEFAULT_CONFIG = {
     ghostyX: 120,
     ghostySize: 48,
     hitboxRadius: 12,
-    maxDeltaTime: 0.05,
   },
   pipes: {
     width: 64,
-    spacing: 280,
-    gapSize: 160,
+    spacing: 350,
+    gapSize: 140,
     gapMargin: 60,
     initialSpeed: 120,
     speedIncrement: 10,
@@ -40,6 +45,8 @@ const DEFAULT_CONFIG = {
   ],
   audio: {
     lsKey: 'flappyKiro_highScore',
+    sfxGain: 0.4,
+    musicGain: 0.25,
   },
   performance: {
     particlePoolSize: 128,
@@ -66,33 +73,119 @@ function initCanvas(config) {
     const fallback = document.getElementById('canvas-fallback');
     canvas.style.display = 'none';
     fallback.style.display = 'block';
-    return null;
+    return { canvas: null, ctx: null };
   }
 
   canvas.width = config.canvas.width;
   canvas.height = config.canvas.height;
 
-  return ctx;
+  return { canvas, ctx };
 }
 
 async function init() {
   const config = await loadConfig();
-  const ctx = initCanvas(config);
+  const { canvas, ctx } = initCanvas(config);
+  if (!ctx) return;
 
-  if (ctx === null) {
-    return;
+  // Subsystems
+  const sm = new StateMachine();
+  const physics = new PhysicsSystem(config.physics, config.canvas.height);
+  const pipes = new PipeManager(config.pipes, config.canvas);
+  const clouds = new CloudManager(config.clouds, config.canvas);
+  const particles = new ParticleSystem(config.performance);
+  const collision = new CollisionSystem(config);
+  const score = new ScoreManager(config);
+  const audio = new AudioManager(config);
+
+  // Animation helpers
+  const ANIM = { IDLE: [0, 1, 2], FLAP: [3, 4], DEATH: [5] };
+  const anim = new AnimationState(ANIM.IDLE, 5);
+  const scorePop = new ScorePop(config);
+  const shake = new ScreenShake(config);
+  const collisionAnim = new CollisionAnimation(config);
+
+  // Renderer
+  const renderer = new Renderer(ctx, config, {
+    clouds, pipes, particles, physics, score,
+    shake, scorePop, collisionAnim, anim,
+  });
+
+  // Start audio loading (non-blocking)
+  audio.init();
+
+  // Initial pipe spawn
+  pipes.reset();
+
+  function resetGame() {
+    physics.reset();
+    pipes.reset();
+    particles.reset();
+    score.reset();
+    collision.reset();
+    anim.set(ANIM.IDLE, 5);
+    shake._t = 1;
+    scorePop._t = 1;
+    collisionAnim._t = 1;
   }
 
-  const stateMachine = new StateMachine();
-  const renderer = { draw(state) {} };
+  // Input
+  new InputHandler(sm, physics, audio, collision, anim, resetGame);
 
   let lastTime = 0;
 
   function loop(timestamp) {
     const dt = Math.min((timestamp - lastTime) / 1000, config.timing.maxDeltaTime);
     lastTime = timestamp;
-    stateMachine.update(dt);
-    renderer.draw(stateMachine.state);
+
+    // Update per state
+    const state = sm.state;
+
+    if (state === 'PLAYING') {
+      physics.update(dt);
+      pipes.update(dt);
+      clouds.update(dt);
+      particles.update(dt);
+      collision.update(dt);
+      anim.update(dt);
+      scorePop.update(dt);
+
+      // Emit trail particle
+      particles.emit(config.physics.ghostyX, physics.y);
+
+      // Score check
+      const scored = pipes.checkScoring(config.physics.ghostyX);
+      if (scored > 0) {
+        for (let i = 0; i < scored; i++) score.increment();
+        audio.playScore();
+        scorePop.trigger();
+        pipes.setSpeed(pipes.getSpeed(score.score));
+      }
+
+      // Collision check
+      if (collision.test(physics.y, pipes.pipes, config.canvas.height)) {
+        sm.transition('COLLIDING');
+        audio.stopMusic();
+        audio.playGameOver();
+        shake.trigger();
+        collisionAnim.trigger();
+        anim.set(ANIM.DEATH, 1);
+        score.checkAndSave();
+      }
+
+    } else if (state === 'PAUSED') {
+      // clouds.update(dt); // optional — keep frozen
+    } else if (state === 'COLLIDING') {
+      collisionAnim.update(dt);
+      shake.update(dt);
+      scorePop.update(dt);
+      if (collisionAnim.done) {
+        sm.transition('GAME_OVER');
+      }
+    } else if (state === 'START' || state === 'GAME_OVER') {
+      clouds.update(dt);
+    }
+
+    renderer.draw(state);
     requestAnimationFrame(loop);
   }
 
