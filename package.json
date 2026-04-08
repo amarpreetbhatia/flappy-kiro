@@ -2,6 +2,7 @@
   "name": "flappy-kiro",
   "version": "1.0.0",
   "type": "module",
+  "description": "This app is build using kiro IDE",
   "scripts": {
     "start": "npx serve .",
     "dev": "npx serve .",
